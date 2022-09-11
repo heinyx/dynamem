@@ -5,7 +5,7 @@
  ** https://github.com/heinyx/dynamem
  **
  ** Author: Dipl.-Ing. Thomas Heiny, Wolfsburg, Germany
- ** Version: 07.01.2018
+ ** Version: 04.10.2020
  **
  **/
 
@@ -18,69 +18,97 @@
 
 #include "dynamem.h"
 
-size_t mstrcpy(char **str, const char *fmt, ...)
+int mstrcpy(char **str, const char *fmt, ...)
 {
-        size_t i;
-        size_t space = strlen(fmt) + 1;
-        char *n = NULL;
+	if (str == NULL) return(0);
+
         va_list ap;
 
-        while (1) {
-                n = realloc(*str, space);
-                if (n == NULL) {
+	va_start(ap, fmt);
+	int space = 1 + vsnprintf(NULL, 0, fmt, ap);
+	va_end(ap);
+
+	char *n = realloc(*str, space);
+	if (n == NULL) {
+		if (*str) free(*str);
+		*str = NULL;
+		return(0);
+	}
+	*str = n;
+
+	va_start(ap, fmt);
+	int i = vsnprintf(*str, space, fmt, ap);
+	va_end(ap);
+
+	if (i < 0) {
+		if (*str) free(*str);
+		*str = NULL;
+		return(0);
+	}
+
+	return(i);
+}
+
+int hstrcpy(char **str, int *reserved, const char *fmt, ...)
+{
+	if (str == NULL) return(0);
+
+	va_list ap;
+
+	va_start(ap, fmt);
+	int space = 1 + vsnprintf(NULL, 0, fmt, ap);
+	va_end(ap);
+
+	if ((*str == NULL) || (*reserved < space)) {
+		char *n = realloc(*str, space);
+		if (n == NULL) {
 			if (*str) free(*str);
 			*str = NULL;
+			*reserved = 0;
 			return(0);
 		}
-
 		*str = n;
+		*reserved = space;
+	}
 
-                va_start(ap, fmt);
-                i = vsnprintf(*str, space, fmt, ap);
-                va_end(ap);
+	va_start(ap, fmt);
+	int i = vsnprintf(*str, *reserved, fmt, ap);
+	va_end(ap);
 
-                if (i < 0) {
-			if (*str) free(*str);
-			*str = NULL;
-                        return(0);
-                }
+	if (i < 0) {
+		if (*str) free(*str);
+		*str = NULL;
+		*reserved = 0;
+		return(0);
+	}
 
-		if (i < space) return(i);
-
-                space = i + 1;
-        }
+	return(i);
 }
 
 char *mstrdup(const char *fmt, ...)
 {
-        size_t i;
-        size_t space = strlen(fmt) + 1;
-        char *p = NULL;
-        char *n = NULL;
+	if (fmt == NULL) return(NULL);
+
         va_list ap;
 
-        while (1) {
-                n = realloc(p, space);
-                if (n == NULL) {
-                        if (p) free(p);
-                        return(NULL);
-                }
+        va_start(ap, fmt);
+        int space = 1 + vsnprintf(NULL, 0, fmt, ap);
+        va_end(ap);
 
-		p = n;
+	char *n = malloc(space);
+	if (n == NULL) {
+		return(NULL);
+	}
 
-                va_start(ap, fmt);
-                i = vsnprintf(p, space, fmt, ap);
-                va_end(ap);
+	va_start(ap, fmt);
+	int i = vsnprintf(n, space, fmt, ap);
+	va_end(ap);
 
-                if (i < 0) {
-                        if (p) free(p);
-                        return(NULL);
-                }
-
-                if (i < space) return(p);
-
-                space = i + 1;
-        }
+	if (i < 0) {
+		if (n) free(n);
+		return(NULL);
+	}
+	return(n);
 }
 
 size_t moccurence(char *str, const char *search)
@@ -144,6 +172,7 @@ carray create_carray()
 
 size_t insert_carray(carray *carr, char *str)
 {
+	if ((carr == NULL) || (str == NULL)) return(0);
 	char **p;
 
 	p = (char**) realloc(carr->arr, (carr->len + 1) * sizeof(char*) );
@@ -171,20 +200,53 @@ carray msplitarray(char *str, const char *delimiter)
 
 char *select_carray(carray *carr, size_t *x)
 {
-	size_t i;
-
-	if (x && (*x >= 0) && (*x < carr->len))
+	if (carr && x && (*x < carr->len))
 	{
-		i = *x;
+		size_t i = *x;
 		*x = i + 1;
 		return(carr->arr[i]);
 	}
 	return(NULL);
 }
 
+size_t join_carray(carray *carr, char **join, const char *delimiter)
+{
+	if (carr && join && delimiter)
+	{
+		size_t i;
+		for (i = 0; i < carr->len; i++)
+		{
+			if (i && (strcmp(delimiter, ""))) mstrcat(join, delimiter);
+			mstrcat(join, carr->arr[i]);
+		}
+		if (*join) return(strlen(*join));
+	}
+	return(-1);
+}
+
+size_t joinr_carray(carray *carr, char **join, const char *delimiter)
+{
+        if (carr && join && delimiter)
+        {
+		size_t i = carr->len;
+		while (i)
+                {
+			i--;
+			if ((i != carr->len - 1) && (strcmp(delimiter, ""))) mstrcat(join, delimiter);
+                        mstrcat(join, carr->arr[i]);
+                }
+                if (*join) return(strlen(*join));
+        }
+        return(-1);
+}
+
 size_t len_carray(carray *carr)
 {
-	return(carr->len);
+	if (carr)
+	{
+		return(carr->len);
+	}
+	return(0);
 }
 
 void close_carray(carray *carr)
@@ -198,10 +260,9 @@ void close_carray(carray *carr)
 
 void free_carray(carray *carr)
 {
-	size_t i;
-
 	if (carr)
 	{
+		size_t i;
 		for (i = 0; i < carr->len; i++)
 		{
 			if (carr->arr[i]) free(carr->arr[i]);
@@ -211,30 +272,33 @@ void free_carray(carray *carr)
 	return;
 }
 
-char *mstrdup_replace(const char *str, const char *search, const char *replace)
+char *mstrdup_replace(char *str, const char *search, const char *replace)
 {
 	if (str == NULL) return(NULL);
 
-	char *out = strdup(str);
+	char *t = strdup(str);
 
-	if ((replace == NULL) || (search == NULL) || !strlen(search)) return(out);
+	if (t == NULL) return(NULL);
 
-	mreplace(&out, search, replace);
+	if ((replace == NULL) || (search == NULL) || !strlen(search)) return(t);
 
-	return(out);
+	mreplace(&t, search, replace);
+
+	return(t);
 }
 
 size_t mreplace(char **str, const char *search, const char *replace)
 {
-        char *p, *seg;
+        char *p, *t, *seg;
 
         if ((*str == NULL) || (replace == NULL)) return(0);
 
-        size_t slen = strlen(search);
-        size_t rlen = strlen(replace);
 	size_t size = strlen(*str);
 
 	if ((search == NULL) || !strlen(search)) return(size);
+
+	size_t slen = strlen(search);
+	size_t rlen = strlen(replace);
 
 	size_t oc = moccurence(*str, search);
 	if (!oc) return(size);
@@ -243,12 +307,13 @@ size_t mreplace(char **str, const char *search, const char *replace)
 
 	if (rlen > slen) {
 		size = size + oc * (rlen - slen);
-		seg = realloc(seg, size + 1);
-		if (seg == NULL) {
+		t = realloc(seg, size + 1);
+		if (t == NULL) {
+			if (*str) free(*str);
 			*str = NULL;
 			return(0);
 		}
-		*str = seg;
+		*str = seg = t;
 	}
 
 	while ((p = strstr(seg, search)) != NULL)
@@ -261,15 +326,58 @@ size_t mreplace(char **str, const char *search, const char *replace)
 	if (rlen < slen) {
 		seg = *str;
                 size = size + oc * (rlen - slen);
-                seg = realloc(seg, size + 1);
-                if (seg == NULL) {
+                t = realloc(seg, size + 1);
+                if (t == NULL) {
+			if (*str) free(*str);
                         *str = NULL;
                         return(0);
                 }
-                *str = seg;
+                *str = seg = t;
         }
 
 	return(size);
+}
+
+size_t hreplace(char **str, size_t *reserved, const char *search, const char *replace)
+{
+	char *p, *t, *seg;
+
+	if ((*str == NULL) || (replace == NULL)) return(0);
+
+	size_t size = strlen(*str);
+
+	if ((search == NULL) || !strlen(search)) return(size);
+
+	size_t slen = strlen(search);
+	size_t rlen = strlen(replace);
+
+	size_t oc = moccurence(*str, search);
+	if (!oc) return(size);
+
+	seg = *str;
+
+	if (rlen > slen) {
+		size = size + oc * (rlen - slen);
+		if (*reserved < size + 1) {
+			t = realloc(seg, size + 1);
+			if (t == NULL) {
+				if (*str) free(*str);
+				*str = NULL;
+				*reserved = 0;
+				return(0);
+			}
+			*str = seg = t;
+			*reserved = size + 1;
+		}
+	}
+
+	while ((p = strstr(seg, search)) != NULL)
+	{
+		seg = p + rlen;
+		if (slen != rlen) memmove(p + rlen, p + slen, strlen(p + slen) + 1);
+		memcpy(p, replace, rlen);
+	}
+	return(strlen(*str));
 }
 
 void mstrcat(char **str, const char *add)
@@ -279,29 +387,61 @@ void mstrcat(char **str, const char *add)
 		if (*str == NULL) {
 			*str = strdup(add);
 		} else {
-			char *out = realloc(*str, strlen(*str) + strlen(add) + 1);
-			if (out == NULL) {
+			char *t = realloc(*str, strlen(*str) + strlen(add) + 1);
+			if (t == NULL) {
+				if (*str) free(*str);
 				*str = NULL;
 				return;
 			}
-			*str = out;
+			*str = t;
 			strcat(*str, add);
 		}
 	}
 }
 
-size_t msubstring(char **str, size_t from, size_t to)
+void mstrcatf(char **str, const char *fmt, ...)
 {
-        char *seg;
+	if (str == NULL) return;
+        va_list ap;
 
-        if (*str == NULL) return(0);
+        va_start(ap, fmt);
+        int space = 1 + vsnprintf(NULL, 0, fmt, ap);
+        va_end(ap);
 
+	char *n = malloc(space);
+	if (n == NULL) return;
+	va_start(ap, fmt);
+	int i = vsnprintf(n, space, fmt, ap);
+	va_end(ap);
+	if (i > 0) mstrcat(str, n);
+	free(n);
+}
+
+char *mstrdup_substring(char *str, int from, int to)
+{
+        if (str == NULL) return(NULL);
+
+        char *t = strdup(str);
+
+        if (t == NULL) return(NULL);
+
+        msubstring(&t, from, to);
+
+        return(t);
+}
+
+size_t msubstring(char **str, int from, int to)
+{
+        if ((str == NULL) || (*str == NULL)) return(0);
+
+	char *seg;
         size_t size = strlen(*str);
 
-	if ((from < 0) || (to < 0)) return(size);
+	if (from < 0) from = size + from;
+	if (to < 0) to = size + to;
 
 	if (from > size) from = size - 1;
-	if ((to > size) || (to == 0)) to = size - 1;
+	if (to > size) to = size - 1;
 
 	seg = *str;
 
@@ -312,6 +452,7 @@ size_t msubstring(char **str, size_t from, size_t to)
 
 	seg = realloc(*str, size + 1);
 	if (seg == NULL) {
+		if (*str) free(*str);
 		*str = NULL;
 		return(0);
 	}
@@ -322,9 +463,10 @@ size_t msubstring(char **str, size_t from, size_t to)
 
 size_t mstrlen(const char *fmt, ...)
 {
+	if (fmt == NULL) return(0);
 	va_list ap;
 	va_start(ap, fmt);
-	size_t size = vsnprintf(NULL, 0, fmt, ap);
+	int size = vsnprintf(NULL, 0, fmt, ap);
 	va_end(ap);
 
 	return(size);
